@@ -1,0 +1,72 @@
+
+name: Sync Upstream to Master (Safe Mode)
+
+on:
+  schedule:
+    # 每天 UTC 02:00 执行
+    - cron: '0 9 * * *'
+  workflow_dispatch: # 允许手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  sync-master:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream Remote
+        run: |
+          git remote add upstream https://github.com/fatedier/frp.git || true
+          git fetch upstream
+
+      - name: Reset Master to Upstream
+        run: |
+          git checkout master
+          # 检查是否有独立提交，如果有则跳过强制重置，防止丢失代码
+          # 这里假设我们已经按照策略将自定义代码移到了 dev-custom 分支
+          # 因此 master 分支可以安全地重置
+          git reset --hard upstream/master
+          
+      - name: Push Clean Master
+        run: |
+          git push origin master --force
+
+  update-dev-branch:
+    needs: sync-master
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge Master into Main
+        run: |
+          git fetch origin
+          git checkout main
+          # 尝试合并最新的 master (即上游最新代码) 到 main
+          git merge origin/master --no-edit || {
+            echo "Merge conflict detected in main. Manual resolution required."
+            exit 1
+          }
+      
+      - name: Push Updated main
+        run: |
+          git push origin main
